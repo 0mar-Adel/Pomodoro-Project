@@ -1,37 +1,55 @@
+This project is an **Embedded Pomodoro Timer** built for AVR microcontrollers (like the ATmega32). It is designed to help users manage their productivity using the Pomodoro technique—alternating between focused work sessions and short breaks—while keeping a permanent record of their total work time.
 
-This directory is intended for project header files.
+---
 
-A header file is a file containing C declarations and macro definitions
-to be shared between several project source files. You request the use of a
-header file in your project source file (C, C++, etc) located in `src` folder
-by including it, with the C preprocessing directive `#include'.
+### 1. The Concept
+The Pomodoro technique usually consists of 25 minutes of work followed by a 5-minute break. This project improves on a basic timer by adding:
+*   **Customization:** Users input their own desired work and rest durations via a keypad.
+*   **Lifetime Statistics:** It uses the microcontroller’s **EEPROM** (Non-volatile memory) to save the total minutes worked. Even if you unplug the device, your "Lifetime Work" stats are saved.
+*   **Visual/Audio Feedback:** It triggers specific pins (likely connected to LEDs or a Buzzer) to alert the user when a session starts or ends.
+*   **Cycle Management:** It automatically runs through 4 consecutive cycles of work and rest.
 
-```src/main.c
+---
 
-#include "header.h"
+### 2. Code Architecture Walkthrough
 
-int main (void)
-{
- ...
-}
-```
+The project is divided into four functional modules:
 
-Including a header file produces the same results as copying the header file
-into each source file that needs it. Such copying would be time-consuming
-and error-prone. With a header file, the related declarations appear
-in only one place. If they need to be changed, they can be changed in one
-place, and programs that include the header file will automatically use the
-new version when next recompiled. The header file eliminates the labor of
-finding and changing all the copies as well as the risk that a failure to
-find one copy will result in inconsistencies within a program.
+#### A. BIT_MATH.h (The Toolbox)
+This header file contains macros that make code more readable. Instead of writing complex bitwise operations, we use:
+*   `SIT_BIT`: Sets a specific pin to 1 (High).
+*   `CLEAR_BIT`: Sets a pin to 0 (Low).
+*   `GET_BIT`: Checks if a pin is currently 1 or 0.
 
-In C, the convention is to give header files names that end with `.h'.
+#### B. LCD.h (The Display)
+This module handles the 16x2 LCD interface in **4-bit mode**. 
+*   **Why 4-bit?** It saves 4 pins on the microcontroller compared to 8-bit mode.
+*   **Unique Mapping:** The code uses a custom pin layout (PB0, PB1, PB2, PB4) for data. 
+*   **Functions:** 
+    *   `LCD_init()`: Wakes up the LCD and sets it to 4-bit mode.
+    *   `LCD_INT()`: A helper function that converts integers to strings so they can be displayed (e.g., displaying "25" for minutes).
 
-Read more about using header files in official GCC documentation:
+#### C. KEYPAD.h (The Input)
+This manages a 4x4 Matrix Keypad.
+*   **Scanning Logic:** It sets rows as outputs and columns as inputs with pull-up resistors. It pulls one row low at a time and checks which column goes low to identify the pressed key.
+*   **Blocking vs. Non-Blocking:** 
+    *   `KEYPAD_GET_CHAR()`: Stops the whole program until a button is pressed (used for menus).
+    *   `KEYPAD_GET_CHAR_NON_BLOCKING()`: Checks for a press instantly and moves on (used during the countdown so the timer doesn't freeze).
 
-* Include Syntax
-* Include Operation
-* Once-Only Headers
-* Computed Includes
+#### D. main.c (The Brain)
+This is where the logic flows. Here is the step-by-step execution:
 
-https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html
+1.  **EEPROM Handling:** The functions `eeprom_read_word` and `eeprom_update_word` are used to manage "Lifetime Stats." The code checks address `0` for the total minutes and updates it every time a work cycle completes.
+2.  **The Menu:** When powered on, the user sees a splash screen.
+    *   Press `/`: Start the timer.
+    *   Press `=`: View lifetime work minutes from EEPROM.
+    *   Press `-`: Reset lifetime stats to zero.
+3.  **Input Collection:** `get_number_input()` allows the user to type "25" for work and "05" for rest. Pressing `x` confirms the input.
+4.  **The Countdown Loop:**
+    *   Calculates `total_seconds`.
+    *   Updates the LCD every second.
+    *   **Interruptible:** Inside the loop, it checks if the user presses `C` (Cancel). If they do, the timer stops and returns to the main menu.
+5.  **Notifications:** 
+    *   When a **Work** session ends: A signal is sent to `PORTB7` (3 pulses).
+    *   When a **Rest** session ends: A signal is sent to `PORTA4` (3 pulses).
+    *   `PORTC6` acts as a status indicator that stays ON during the entire work period.
